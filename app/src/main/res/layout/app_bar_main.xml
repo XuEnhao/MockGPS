@@ -78,7 +78,7 @@
             android:id="@+id/search_history_linear"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#ddffffff"
+            android:background="#ffffff"
             android:visibility="gone"
             android:layout_marginTop="?attr/actionBarSize">
             <ListView

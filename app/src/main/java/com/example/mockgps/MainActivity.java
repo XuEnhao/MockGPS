@@ -2,7 +2,6 @@ package com.example.mockgps;
 
 import android.Manifest;
 import android.annotation.TargetApi;
-import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.ContentValues;
 import android.content.Context;
@@ -10,7 +9,6 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.hardware.Sensor;
@@ -26,33 +24,13 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
-
-import androidx.annotation.RequiresApi;
-
-import com.google.android.material.floatingactionbutton.FloatingActionButton;
-import com.google.android.material.snackbar.Snackbar;
-
-import androidx.core.app.ActivityCompat;
-import androidx.core.view.MenuItemCompat;
-import androidx.appcompat.app.AlertDialog;
-import androidx.appcompat.widget.SearchView;
-
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
-import android.view.MotionEvent;
-import android.view.View;
-
-import com.google.android.material.navigation.NavigationView;
-
-import androidx.core.view.GravityCompat;
-import androidx.drawerlayout.widget.DrawerLayout;
-import androidx.appcompat.app.ActionBarDrawerToggle;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
-
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
+import android.view.View;
 import android.widget.AdapterView;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -62,6 +40,16 @@ import android.widget.RadioGroup;
 import android.widget.SimpleAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.RequiresApi;
+import androidx.appcompat.app.ActionBarDrawerToggle;
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SearchView;
+import androidx.appcompat.widget.Toolbar;
+import androidx.core.view.GravityCompat;
+import androidx.core.view.MenuItemCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
 
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
@@ -106,7 +94,11 @@ import com.example.service.HistoryDBHelper;
 import com.example.service.MockGpsService;
 import com.example.service.SearchDBHelper;
 import com.example.service.Utils;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.navigation.NavigationView;
+import com.google.android.material.snackbar.Snackbar;
 
+import org.apache.log4j.Logger;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -121,8 +113,6 @@ import mapapi.overlayutil.PoiOverlay;
 
 import static com.example.service.MockGpsService.RunCode;
 import static com.example.service.MockGpsService.StopCode;
-
-import org.apache.log4j.Logger;
 
 public class MainActivity extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener, SensorEventListener {
@@ -202,7 +192,7 @@ public class MainActivity extends AppCompatActivity
     private LinearLayout mHistorylinearLayout;
     private MenuItem searchItem;
     private boolean isSubmit;
-    private SuggestionSearch mSuggestionSearch;
+    private SuggestionSearch mSuggestionSearch = SuggestionSearch.newInstance();
     //log debug
     private static Logger log = Logger.getLogger(MainActivity.class);
     ////////
@@ -222,42 +212,48 @@ public class MainActivity extends AppCompatActivity
         }
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
         Log.d("PROGRESS", "onCreate");
         log.debug("PROGRESS: onCreate");
-
-        //sqlite
-        try {
-            historyDBHelper = new HistoryDBHelper(getApplicationContext());
-            locHistoryDB = historyDBHelper.getWritableDatabase();
-            searchDBHelper = new SearchDBHelper(getApplicationContext());
-            searchHistoryDB = searchDBHelper.getWritableDatabase();
-            isSQLiteStart = true;
-//            historyDBHelper.onUpgrade(locHistoryDB,locHistoryDB.getVersion(),locHistoryDB.getVersion());
-        } catch (Exception e) {
-            Log.e("DATABASE", "sqlite init error");
-            log.error("DATABASE: sqlite init error");
-            isSQLiteStart = false;
-            e.printStackTrace();
-        }
-
+        initSqlite();
         //set fab listener
         setFabListener();
-
-        DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
-        ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
-                this, drawer, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close);
-        drawer.addDrawerListener(toggle);
-        toggle.syncState();
-
-        NavigationView navigationView = (NavigationView) findViewById(R.id.nav_view);
-        navigationView.setNavigationItemSelectedListener(this);
-
+        initDrawerLayout(toolbar);
         //http init
         mRequestQueue = Volley.newRequestQueue(this);
+        //注册广播接收器
+        initService();
+        /////
+        mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);//获取传感器管理服务
+        mCurrentMode = MyLocationConfiguration.LocationMode.NORMAL;
+        //RadioGroup
+        setGroupListener();
+        //检查GPS
+        checkGps();
+        //初始化searchView
+        initSearchView();
+        //是否开启位置模拟
+        initOpenLocation();
+        //初始化悬浮窗
+        initFloatWindow();
+        //初始化POI搜索监听
+        initPoiSearchResultListener();
+        //搜索结果列表的点击监听
+        setSearchRetClickListener();
+        //搜索历史列表的点击监听
+        setHistorySearchClickListener();
+        //设置搜索建议返回值监听
+        setSugSearchListener();
+        //初始位置随机处理
+        randomFix();
+        //初始化没有网络时的情况
+        initUnNetwork();
 
+    }
+
+    private void initService() {
         //注册MockService广播接收器
         try {
             mockServiceReceiver = new MockServiceReceiver();
@@ -269,58 +265,9 @@ public class MainActivity extends AppCompatActivity
             Log.e("UNKNOWN", "registerReceiver error");
             e.printStackTrace();
         }
+    }
 
-        /////
-        mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);//获取传感器管理服务
-        mCurrentMode = MyLocationConfiguration.LocationMode.NORMAL;
-        //RadioGroup
-        setGroupListener();
-
-        //网络是否可用
-        if (!isNetworkAvailable()) {
-            DisplayToast("网络连接不可用,请检查网络连接设置");
-            isNetworkConnected = false;
-        }
-
-        //gps是否开启
-//        isGPSOpen=isGpsOpened();
-        if (!(isGPSOpen = isGpsOpened())) {
-            DisplayToast("GPS定位未开启，请先打开GPS定位服务");
-        }
-
-        // 地图初始化
-        mMapView = (MapView) findViewById(R.id.bmapView);
-        mBaiduMap = mMapView.getMap();
-        initListener();
-
-        // 开启定位图层
-        mBaiduMap.setMyLocationEnabled(true);
-
-        //开启GPS的提醒
-        if (!isGPSOpen) {
-            //如果未打开GPS，跳转到定位设置界面
-            showGpsDialog();
-        } else {
-            //如果GPS定位开启，则打开定位图层
-            openLocateLayer();
-        }
-
-        //poi search 实例化
-        poiSearch = PoiSearch.newInstance();
-        //搜索相关
-        searchView = (SearchView) findViewById(R.id.action_search);
-        searchlist = (ListView) findViewById(R.id.search_list_view);
-        mlinearLayout = (LinearLayout) findViewById(R.id.search_linear);
-
-        historySearchlist = (ListView) findViewById(R.id.search_history_list_view);
-        mHistorylinearLayout = (LinearLayout) findViewById(R.id.search_history_linear);
-
-        // 是否开启位置模拟
-        isMockLocOpen = isAllowMockLocation();
-        //提醒用户开启位置模拟
-        if (!isMockLocOpen) {
-            setDialog();
-        }
+    private void initFloatWindow() {
         //悬浮窗权限判断
         if (Build.VERSION.SDK_INT >= 23) {
             if (!Settings.canDrawOverlays(getApplicationContext())) {
@@ -328,16 +275,18 @@ public class MainActivity extends AppCompatActivity
                 setFloatWindowDialog();
             }
         }
-        //初始化POI搜索监听
-        initPoiSearchResultListener();
-        //搜索结果列表的点击监听
-        setSearchRetClickListener();
-        //搜索历史列表的点击监听
-        setHistorySearchClickListener();
-        //设置搜索建议返回值监听
-        setSugSearchListener();
-        //初始位置随机处理
-        randomFix();
+    }
+
+    private void initOpenLocation() {
+        // 是否开启位置模拟
+        isMockLocOpen = isAllowMockLocation();
+        //提醒用户开启位置模拟
+        if (!isMockLocOpen) {
+            setDialog();
+        }
+    }
+
+    private void initUnNetwork() {
         //如果网络不可用，地图中心点置为最新定位点
         LatLng latLng = getLatestLocation(locHistoryDB, HistoryDBHelper.TABLE_NAME);
         MapStatusUpdate mapstatusupdate = MapStatusUpdateFactory.newLatLng(latLng);
@@ -364,10 +313,82 @@ public class MainActivity extends AppCompatActivity
                 openLocateLayer();
             }
         }).start();
+    }
 
-//        func();
-        //for debug
+    private void initSearchView() {
+        //poi search 实例化
+        poiSearch = PoiSearch.newInstance();
+        //搜索相关
+        searchView = findViewById(R.id.action_search);
+        searchlist = findViewById(R.id.search_list_view);
+        mlinearLayout = findViewById(R.id.search_linear);
 
+        historySearchlist = findViewById(R.id.search_history_list_view);
+        mHistorylinearLayout = findViewById(R.id.search_history_linear);
+    }
+
+    private void checkGps() {
+        //网络是否可用
+        if (!isNetworkAvailable()) {
+            DisplayToast("网络连接不可用,请检查网络连接设置");
+            isNetworkConnected = false;
+        }
+
+        //gps是否开启
+//        isGPSOpen=isGpsOpened();
+        if (!(isGPSOpen = isGpsOpened())) {
+            DisplayToast("GPS定位未开启，请先打开GPS定位服务");
+        }
+
+        // 地图初始化
+        mMapView = findViewById(R.id.bmapView);
+        mBaiduMap = mMapView.getMap();
+        initListener();
+
+        // 开启定位图层
+        mBaiduMap.setMyLocationEnabled(true);
+
+        //开启GPS的提醒
+        if (!isGPSOpen) {
+            //如果未打开GPS，跳转到定位设置界面
+            showGpsDialog();
+        } else {
+            //如果GPS定位开启，则打开定位图层
+            openLocateLayer();
+        }
+    }
+
+    private void initDrawerLayout(Toolbar toolbar) {
+        DrawerLayout drawer = findViewById(R.id.drawer_layout);
+        ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
+                this, drawer, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close);
+        drawer.addDrawerListener(toggle);
+        toggle.syncState();
+
+        NavigationView navigationView = findViewById(R.id.nav_view);
+        //todo
+        TextView tv_name = navigationView.findViewById(R.id.tv_name);
+        TextView tv_content = navigationView.findViewById(R.id.textView);
+
+
+        navigationView.setNavigationItemSelectedListener(this);
+    }
+
+    private void initSqlite() {
+        //sqlite
+        try {
+            historyDBHelper = new HistoryDBHelper(getApplicationContext());
+            locHistoryDB = historyDBHelper.getWritableDatabase();
+            searchDBHelper = new SearchDBHelper(getApplicationContext());
+            searchHistoryDB = searchDBHelper.getWritableDatabase();
+            isSQLiteStart = true;
+//            historyDBHelper.onUpgrade(locHistoryDB,locHistoryDB.getVersion(),locHistoryDB.getVersion());
+        } catch (Exception e) {
+            Log.e("DATABASE", "sqlite init error");
+            log.error("DATABASE: sqlite init error");
+            isSQLiteStart = false;
+            e.printStackTrace();
+        }
     }
 
     //for debug
@@ -408,8 +429,8 @@ public class MainActivity extends AppCompatActivity
         //    设置我们自己定义的布局文件作为弹出框的Content
         builder.setView(view);
 
-        final EditText dialog_lng = (EditText) view.findViewById(R.id.dialog_longitude);
-        final EditText dialog_lat = (EditText) view.findViewById(R.id.dialog_latitude);
+        final EditText dialog_lng = view.findViewById(R.id.dialog_longitude);
+        final EditText dialog_lat = view.findViewById(R.id.dialog_latitude);
 
         builder.setPositiveButton("确定", new DialogInterface.OnClickListener() {
             @Override
@@ -465,19 +486,6 @@ public class MainActivity extends AppCompatActivity
         mLocClient.start();
     }
 
-    //获取IMEI
-//    public String getIMEI(Context context, int slotId) {
-//        try {
-//            TelephonyManager manager = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
-//            assert manager != null;
-//            Method method = manager.getClass().getMethod("getImei", int.class);
-//            String imei = (String) method.invoke(manager, slotId);
-//            Log.d("IMEI", imei);
-//            return imei;
-//        } catch (Exception e) {
-//            return "";
-//        }
-//    }
 
     //获取查询历史
     private List<Map<String, Object>> getSearchHistory() {
@@ -550,7 +558,7 @@ public class MainActivity extends AppCompatActivity
 
     //set group button listener
     private void setGroupListener() {
-        grouploc = (RadioGroup) this.findViewById(R.id.RadioGroupLocType);
+        grouploc = this.findViewById(R.id.RadioGroupLocType);
         radioButtonListener2 = new RadioGroup.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(RadioGroup group, int checkedId) {
@@ -583,7 +591,7 @@ public class MainActivity extends AppCompatActivity
         grouploc.setOnCheckedChangeListener(radioButtonListener2);
 
 
-        groupmap = (RadioGroup) this.findViewById(R.id.RadioGroup);
+        groupmap = this.findViewById(R.id.RadioGroup);
         radioButtonListener = new RadioGroup.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(RadioGroup group, int checkedId) {
@@ -601,8 +609,8 @@ public class MainActivity extends AppCompatActivity
     //set float action button listener
     private void setFabListener() {
         //应用内悬浮按钮
-        fab = (FloatingActionButton) findViewById(R.id.fab);
-        fabStop = (FloatingActionButton) findViewById(R.id.fabStop);
+        fab = findViewById(R.id.fab);
+        fabStop = findViewById(R.id.fabStop);
         fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -618,7 +626,7 @@ public class MainActivity extends AppCompatActivity
                             Log.d("DEBUG", "current pt is " + currentPt.longitude + "  " + currentPt.latitude);
                             log.debug("current pt is " + currentPt.longitude + "  " + currentPt.latitude);
                             updateMapState();
-                            //start mock location service
+                            //start mock icon service
                             Intent mockLocServiceIntent = new Intent(MainActivity.this, MockGpsService.class);
                             mockLocServiceIntent.putExtra("key", latLngInfo);
                             //isFisrtUpdate=false;
@@ -662,7 +670,7 @@ public class MainActivity extends AppCompatActivity
             @Override
             public void onClick(View v) {
                 if (isMockServStart) {
-                    //end mock location
+                    //end mock icon
                     Intent mockLocServiceIntent = new Intent(MainActivity.this, MockGpsService.class);
                     stopService(mockLocServiceIntent);
                     Snackbar.make(v, "位置模拟服务终止", Snackbar.LENGTH_LONG)
@@ -708,7 +716,7 @@ public class MainActivity extends AppCompatActivity
                 contentValues.put("IsLocate", 1);
                 contentValues.put("BD09Longitude", lng);
                 contentValues.put("BD09Latitude", lat);
-                String wgsLatLngStr[] = latLngInfo.split("&");
+                String[] wgsLatLngStr = latLngInfo.split("&");
                 contentValues.put("WGS84Longitude", wgsLatLngStr[0]);
                 contentValues.put("WGS84Latitude", wgsLatLngStr[1]);
                 contentValues.put("TimeStamp", System.currentTimeMillis() / 1000);
@@ -759,7 +767,7 @@ public class MainActivity extends AppCompatActivity
                     contentValues.put("IsLocate", 1);
                     contentValues.put("BD09Longitude", lng);
                     contentValues.put("BD09Latitude", lat);
-                    String wgsLatLngStr[] = latLngInfo.split("&");
+                    String[] wgsLatLngStr = latLngInfo.split("&");
                     contentValues.put("WGS84Longitude", wgsLatLngStr[0]);
                     contentValues.put("WGS84Latitude", wgsLatLngStr[1]);
                     contentValues.put("TimeStamp", System.currentTimeMillis() / 1000);
@@ -1513,7 +1521,7 @@ public class MainActivity extends AppCompatActivity
 
     @Override
     public void onBackPressed() {
-        DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
+        DrawerLayout drawer = findViewById(R.id.drawer_layout);
         if (drawer.isDrawerOpen(GravityCompat.START)) {
             drawer.closeDrawer(GravityCompat.START);
         } else {
@@ -1727,7 +1735,7 @@ public class MainActivity extends AppCompatActivity
 
         }
 
-        DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
+        DrawerLayout drawer = findViewById(R.id.drawer_layout);
         drawer.closeDrawer(GravityCompat.START);
         return true;
     }
@@ -1800,7 +1808,7 @@ public class MainActivity extends AppCompatActivity
                                 } else {
                                     //离线转换坐标系
 //                                    double latLng[] = Utils.bd2wgs(Double.valueOf(longitude), Double.valueOf(latitude));
-                                    double latLng[] = Utils.gcj02towgs84(Double.valueOf(gcj02Longitude), Double.valueOf(gcj02Latitude));
+                                    double[] latLng = Utils.gcj02towgs84(Double.valueOf(gcj02Longitude), Double.valueOf(gcj02Latitude));
                                     latLngInfo = latLng[0] + "&" + latLng[1];
                                     Log.d("DEBUG", "IN CHN, NEED TO TRANSFORM COORDINATE");
                                     log.debug("IN CHN, NEED TO TRANSFORM COORDINATE");
@@ -1810,7 +1818,7 @@ public class MainActivity extends AppCompatActivity
                             //api接口转换失败 认为在国内
                             else {
                                 //离线转换坐标系
-                                double latLng[] = Utils.bd2wgs(Double.valueOf(longitude), Double.valueOf(latitude));
+                                double[] latLng = Utils.bd2wgs(Double.valueOf(longitude), Double.valueOf(latitude));
                                 latLngInfo = latLng[0] + "&" + latLng[1];
                                 Log.d("DEBUG", "IN CHN, NEED TO TRANSFORM COORDINATE");
                                 log.debug("IN CHN, NEED TO TRANSFORM COORDINATE");
@@ -1822,7 +1830,7 @@ public class MainActivity extends AppCompatActivity
                             log.error("JSON: resolve json error");
                             e.printStackTrace();
                             //离线转换坐标系
-                            double latLng[] = Utils.bd2wgs(Double.valueOf(longitude), Double.valueOf(latitude));
+                            double[] latLng = Utils.bd2wgs(Double.valueOf(longitude), Double.valueOf(latitude));
                             latLngInfo = latLng[0] + "&" + latLng[1];
                             Log.d("DEBUG", "IN CHN, NEED TO TRANSFORM COORDINATE");
                             log.debug("IN CHN, NEED TO TRANSFORM COORDINATE");
@@ -1837,7 +1845,7 @@ public class MainActivity extends AppCompatActivity
                 Log.e("HTTP", "HTTP GET FAILED");
                 log.error("HTTP: HTTP GET FAILED");
                 //离线转换坐标系
-                double latLng[] = Utils.bd2wgs(Double.valueOf(longitude), Double.valueOf(latitude));
+                double[] latLng = Utils.bd2wgs(Double.valueOf(longitude), Double.valueOf(latitude));
                 latLngInfo = latLng[0] + "&" + latLng[1];
                 Log.d("DEBUG", "IN CHN, NEED TO TRANSFORM COORDINATE");
                 log.debug("IN CHN, NEED TO TRANSFORM COORDINATE");
@@ -1862,7 +1870,7 @@ public class MainActivity extends AppCompatActivity
         final String mapType = "bd09ll";
         //bd09坐标的位置信息
 //        String mapApiUrl = "https://api.map.baidu.com/geocoder/v2/?location=" + currentPt.latitude + "," + currentPt.longitude + "&output=json&pois=1&ak=" + ak + "&mcode=" + mcode;
-        String mapApiUrl = "https://api.map.baidu.com/reverse_geocoding/v3/?ak=" + ak + "&output=json&coordtype=" + mapType + "&location=" + currentPt.latitude + "," + currentPt.longitude + "&mcode=" + mcode;
+        String mapApiUrl = "https://api.map.baidu.com/reverse_geocoding/v3/?ak=" + ak + "&output=json&coordtype=" + mapType + "&icon=" + currentPt.latitude + "," + currentPt.longitude + "&mcode=" + mcode;
         Log.d("MAPAPI", mapApiUrl);
         StringRequest stringRequest = new StringRequest(mapApiUrl,
                 new Response.Listener<String>() {
@@ -1883,7 +1891,7 @@ public class MainActivity extends AppCompatActivity
                                 //插表参数
                                 ContentValues contentValues = new ContentValues();
                                 contentValues.put("Location", formatted_address);
-                                String latLngStr[] = latLngInfo.split("&");
+                                String[] latLngStr = latLngInfo.split("&");
                                 contentValues.put("WGS84Longitude", latLngStr[0]);
                                 contentValues.put("WGS84Latitude", latLngStr[1]);
                                 contentValues.put("TimeStamp", System.currentTimeMillis() / 1000);
@@ -1903,7 +1911,7 @@ public class MainActivity extends AppCompatActivity
                                 //插表参数
                                 ContentValues contentValues = new ContentValues();
                                 contentValues.put("Location", "NULL");
-                                String latLngStr[] = latLngInfo.split("&");
+                                String[] latLngStr = latLngInfo.split("&");
                                 contentValues.put("WGS84Longitude", latLngStr[0]);
                                 contentValues.put("WGS84Latitude", latLngStr[1]);
                                 contentValues.put("TimeStamp", System.currentTimeMillis() / 1000);
@@ -1925,7 +1933,7 @@ public class MainActivity extends AppCompatActivity
                             //插表参数
                             ContentValues contentValues = new ContentValues();
                             contentValues.put("Location", "NULL");
-                            String latLngStr[] = latLngInfo.split("&");
+                            String[] latLngStr = latLngInfo.split("&");
                             contentValues.put("WGS84Longitude", latLngStr[0]);
                             contentValues.put("WGS84Latitude", latLngStr[1]);
                             contentValues.put("TimeStamp", System.currentTimeMillis() / 1000);
@@ -1952,7 +1960,7 @@ public class MainActivity extends AppCompatActivity
                 //插表参数
                 ContentValues contentValues = new ContentValues();
                 contentValues.put("Location", "NULL");
-                String latLngStr[] = latLngInfo.split("&");
+                String[] latLngStr = latLngInfo.split("&");
                 contentValues.put("WGS84Longitude", latLngStr[0]);
                 contentValues.put("WGS84Latitude", latLngStr[1]);
                 contentValues.put("TimeStamp", System.currentTimeMillis() / 1000);

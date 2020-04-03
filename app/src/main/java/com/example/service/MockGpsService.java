@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -19,15 +20,17 @@ import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.SystemClock;
-import androidx.annotation.Nullable;
-import androidx.annotation.RequiresApi;
-import androidx.core.app.NotificationCompat;
 import android.util.Log;
 import android.view.Gravity;
 import android.widget.Toast;
 
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
+import androidx.core.app.NotificationCompat;
+
 import com.baidu.mapapi.model.LatLng;
 import com.example.log4j.LogUtil;
+import com.example.mockgps.MainActivity;
 import com.example.mockgps.R;
 
 import org.apache.log4j.Logger;
@@ -77,12 +80,12 @@ public class MockGpsService extends Service {
 
         //for test
         getProviders();
-        //remove default network location provider
+        //remove default network icon provider
         rmNetworkTestProvider();
         //remove gps provider
         rmGPSTestProvider();
 
-        //add a new test network location provider
+        //add a new test network icon provider
         setNetworkTestProvider();
 //        add a GPS test Provider
         setGPSTestProvider();
@@ -97,10 +100,10 @@ public class MockGpsService extends Service {
                     Thread.sleep(128);
                     if (!isStop) {
 
-                        //remove default network location provider
+                        //remove default network icon provider
                         //rmNetworkProvider();
 
-                        //add a new network location provider
+                        //add a new network icon provider
                         //setNewNetworkProvider();
 
                         setTestProviderLocation();
@@ -142,6 +145,14 @@ public class MockGpsService extends Service {
         String name = "channel_name";
         NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         Notification notification = null;
+
+        //click通知跳转
+        Intent it = new Intent(this, MainActivity.class);
+        it.addCategory(Intent.CATEGORY_LAUNCHER);
+        it.setAction(Intent.ACTION_MAIN);
+        it.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        PendingIntent pIntent = PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_UPDATE_CURRENT);
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel mChannel = new NotificationChannel(channelId, name, NotificationManager.IMPORTANCE_LOW);
             Log.i(TAG, mChannel.toString());
@@ -152,12 +163,14 @@ public class MockGpsService extends Service {
                     .setChannelId(channelId)
                     .setContentTitle("位置模拟服务已启动")
                     .setContentText("MockLocation service is running")
-                    .setSmallIcon(R.mipmap.ic_launcher).build();
+                    .setContentIntent(pIntent)
+                    .setSmallIcon(R.mipmap.icon).build();
         } else {
             NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this)
                     .setContentTitle("位置模拟服务已启动")
                     .setContentText("MockLocation service is running")
-                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setSmallIcon(R.mipmap.icon)
+                    .setContentIntent(pIntent)
                     .setOngoing(true)
                     .setChannelId(channelId);//无效
             notification = notificationBuilder.build();
@@ -165,11 +178,11 @@ public class MockGpsService extends Service {
         startForeground(1, notification);
         //
 
-        //get location info from mainActivity
+        //get icon info from mainActivity
         latLngInfo = intent.getStringExtra("key");
         Log.d(TAG, "DataFromMain is " + latLngInfo);
         log.debug(TAG + ": DataFromMain is " + latLngInfo);
-        //start to refresh location
+        //start to refresh icon
         isStop = false;
 
         //这里开启悬浮窗
@@ -225,7 +238,7 @@ public class MockGpsService extends Service {
         }
     }
 
-    //generate a location
+    //generate a icon
     public Location generateLocation(LatLng latLng) {
         Location loc = new Location("gps");
 
@@ -253,10 +266,10 @@ public class MockGpsService extends Service {
 
     //给test provider添加网络定位
     private void setTestProviderLocation() {
-        //default location 30.5437233 104.0610342 成都长虹科技大厦
+        //default icon 30.5437233 104.0610342 成都长虹科技大厦
         Log.d(TAG, "setNetworkLocation: " + latLngInfo);
         log.debug(TAG + ": setNetworkLocation: " + latLngInfo);
-        String latLngStr[] = latLngInfo.split("&");
+        String[] latLngStr = latLngInfo.split("&");
         LatLng latLng = new LatLng(Double.valueOf(latLngStr[1]), Double.valueOf(latLngStr[0]));
         String providerStr = LocationManager.NETWORK_PROVIDER;
 //        String providerStr2 = LocationManager.GPS_PROVIDER;
@@ -272,12 +285,12 @@ public class MockGpsService extends Service {
         }
     }
 
-    //set gps location
+    //set gps icon
     private void setGPSLocation(){
-        //default location 30.5437233 104.0610342 成都长虹科技大厦
+        //default icon 30.5437233 104.0610342 成都长虹科技大厦
         Log.d(TAG, "setGPSLocation: " + latLngInfo);
         log.debug(TAG + ": setGPSLocation: " + latLngInfo);
-        String latLngStr[] = latLngInfo.split("&");
+        String[] latLngStr = latLngInfo.split("&");
         LatLng latLng = new LatLng(Double.valueOf(latLngStr[1]), Double.valueOf(latLngStr[0]));
         String providerStr = LocationManager.GPS_PROVIDER;
 //        String providerStr2 = LocationManager.GPS_PROVIDER;
@@ -363,19 +376,6 @@ public class MockGpsService extends Service {
 
     private void setGPSTestProvider() {
         LocationProvider provider = locationManager.getProvider(LocationManager.GPS_PROVIDER);
-//        if (provider != null) {
-//            locationManager.addTestProvider(
-//                    provider.getName()
-//                    , provider.requiresNetwork()
-//                    , provider.requiresSatellite()
-//                    , provider.requiresCell()
-//                    , provider.hasMonetaryCost()
-//                    , provider.supportsAltitude()
-//                    , provider.supportsSpeed()
-//                    , provider.supportsBearing()
-//                    , provider.getPowerRequirement()
-//                    , provider.getAccuracy());
-//        } else {
         try {
             locationManager.addTestProvider(LocationManager.GPS_PROVIDER, false, true, true,
                     false, true, true, true, 0, 5);
